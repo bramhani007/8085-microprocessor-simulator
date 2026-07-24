@@ -2,7 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API_URL = "http://127.0.0.1:8000/api/simulator";
+const API_URL = "https://eight085-microprocessor-simulator.onrender.com/api/simulator";
 
 function App() {
   const [assemblyCode, setAssemblyCode] = useState(
