@@ -11,7 +11,7 @@ from .api.routes import router
 app = FastAPI(
     title="8085 Microprocessor Simulator API",
     description=(
-        "Assembly Language Debugger and "
+        "Assembly Program Executor and "
         "Visual Simulator for Intel 8085"
     ),
     version="1.0.0",
@@ -25,16 +25,11 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
 
-    # Frontend URLs allowed to access the backend
-    allow_origins=[
-        "http://localhost:5173",
-        "http://127.0.0.1:5173",
-    ],
+    # Allow requests from all origins (for development and deployment)
+    allow_origins=["*"],
 
-    allow_credentials=True,
-
+    allow_credentials=False,
     allow_methods=["*"],
-
     allow_headers=["*"],
 )
 
@@ -46,7 +41,7 @@ app.add_middleware(
 @app.get("/")
 def root():
     return {
-        "project": "8085 Assembly Language Debugger and Visual Simulator",
+        "project": "8085 Assembly Program Executor and Visual Simulator",
         "status": "running",
     }
 

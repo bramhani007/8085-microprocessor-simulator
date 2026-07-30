@@ -2,13 +2,20 @@ import { useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API_URL = "https://eight085-microprocessor-simulator.onrender.com/api/simulator";
+const API_URL = "http://127.0.0.1:8000/api/simulator";
 
 function App() {
+
   const [assemblyCode, setAssemblyCode] = useState(
-    `MVI A, 05H
-MVI B, 03H
+    `MVI A, 00H
+MVI B, 05H
+MVI C, 03H
+
+LOOP:
 ADD B
+DCR C
+JNZ LOOP
+
 HLT`
   );
 
@@ -17,129 +24,731 @@ HLT`
   const [message, setMessage] = useState("Ready");
 
   // =====================================================
-  // ASSEMBLY CODE → MACHINE CODE
+  // NUMBER PARSER
+  // =====================================================
+
+  const parseNumber = (value) => {
+
+    if (!value) {
+      throw new Error("Missing numeric value");
+    }
+
+    const input = value
+      .trim()
+      .toUpperCase();
+
+    let result;
+
+    // HEXADECIMAL
+    if (input.endsWith("H")) {
+
+      result = parseInt(
+        input.slice(0, -1),
+        16
+      );
+    }
+
+    // BINARY
+    else if (input.endsWith("B")) {
+
+      result = parseInt(
+        input.slice(0, -1),
+        2
+      );
+    }
+
+    // DECIMAL
+    else {
+
+      result = parseInt(
+        input,
+        10
+      );
+    }
+
+    if (
+      Number.isNaN(result) ||
+      result < 0 ||
+      result > 0xFFFF
+    ) {
+
+      throw new Error(
+        `Invalid number: ${value}`
+      );
+    }
+
+    return result;
+  };
+
+  // =====================================================
+  // REGISTER OPCODE TABLE
+  // =====================================================
+
+  const registerCodes = {
+
+    B: 0b000,
+    C: 0b001,
+    D: 0b010,
+    E: 0b011,
+    H: 0b100,
+    L: 0b101,
+    A: 0b111
+
+  };
+
+  // =====================================================
+  // INSTRUCTION SIZE
+  // =====================================================
+
+  const getInstructionSize = (line) => {
+
+    const parts = line
+      .replace(",", " ")
+      .trim()
+      .split(/\s+/);
+
+    const instruction = parts[0];
+
+    // 2-BYTE INSTRUCTIONS
+    if (instruction === "MVI") {
+      return 2;
+    }
+
+    // 3-BYTE INSTRUCTIONS
+    if (
+
+      instruction === "JMP" ||
+      instruction === "JNZ" ||
+      instruction === "JC" ||
+      instruction === "JNC"
+
+    ) {
+
+      return 3;
+    }
+
+    // 1-BYTE INSTRUCTIONS
+    return 1;
+  };
+
+  // =====================================================
+  // GET JUMP ADDRESS
+  // =====================================================
+
+  const resolveAddress = (target, labels) => {
+
+    if (!target) {
+
+      throw new Error(
+        "Missing jump address or label"
+      );
+    }
+
+    // LABEL
+    if (
+      labels[target] !== undefined
+    ) {
+
+      return labels[target];
+    }
+
+    // NUMERIC ADDRESS
+    return parseNumber(target);
+  };
+
+  // =====================================================
+  // ASSEMBLER
   // =====================================================
 
   const assembleProgram = (code) => {
-    const lines = code
+
+    // =================================================
+    // CLEAN SOURCE CODE
+    // =================================================
+
+    const rawLines = code
       .split("\n")
-      .map((line) => line.trim().toUpperCase())
-      .filter((line) => line !== "");
+      .map((line) => {
+
+        // Remove comments
+        const withoutComment =
+          line.split(";")[0];
+
+        return withoutComment
+          .trim()
+          .toUpperCase();
+
+      })
+      .filter(
+        (line) => line !== ""
+      );
+
+    // =================================================
+    // PASS 1
+    // FIND LABEL ADDRESSES
+    // =================================================
+
+    const labels = {};
+
+    let address = 0;
+
+    for (let originalLine of rawLines) {
+
+      let line = originalLine;
+
+      // ---------------------------------------------
+      // LABEL ONLY
+      // ---------------------------------------------
+
+      if (
+        line.endsWith(":")
+      ) {
+
+        const label =
+          line
+            .slice(0, -1)
+            .trim();
+
+        if (
+          !label
+        ) {
+
+          throw new Error(
+            `Invalid label: ${originalLine}`
+          );
+        }
+
+        if (
+          labels[label] !== undefined
+        ) {
+
+          throw new Error(
+            `Duplicate label: ${label}`
+          );
+        }
+
+        labels[label] = address;
+
+        continue;
+      }
+
+      // ---------------------------------------------
+      // LABEL + INSTRUCTION
+      // ---------------------------------------------
+
+      if (
+        line.includes(":")
+      ) {
+
+        const separatorIndex =
+          line.indexOf(":");
+
+        const label =
+          line
+            .slice(0, separatorIndex)
+            .trim();
+
+        line =
+          line
+            .slice(separatorIndex + 1)
+            .trim();
+
+        if (
+          labels[label] !== undefined
+        ) {
+
+          throw new Error(
+            `Duplicate label: ${label}`
+          );
+        }
+
+        labels[label] = address;
+      }
+
+      // ---------------------------------------------
+      // CALCULATE INSTRUCTION SIZE
+      // ---------------------------------------------
+
+      address +=
+        getInstructionSize(line);
+    }
+
+    // =================================================
+    // PASS 2
+    // GENERATE MACHINE CODE
+    // =================================================
 
     const machineCode = [];
 
-    for (const line of lines) {
-      const parts = line.replace(",", "").split(/\s+/);
+    for (
+      let originalLine of rawLines
+    ) {
 
-      const instruction = parts[0];
+      let line = originalLine;
 
-      // =========================
-      // MVI A, DATA
-      // =========================
+      // ---------------------------------------------
+      // LABEL ONLY
+      // ---------------------------------------------
 
-      if (instruction === "MVI" && parts[1] === "A") {
-        const value = parseNumber(parts[2]);
+      if (
+        line.endsWith(":")
+      ) {
 
-        machineCode.push(0x3E);
-        machineCode.push(value);
+        continue;
       }
 
-      // =========================
-      // MVI B, DATA
-      // =========================
+      // ---------------------------------------------
+      // REMOVE LABEL
+      // ---------------------------------------------
 
-      else if (instruction === "MVI" && parts[1] === "B") {
-        const value = parseNumber(parts[2]);
+      if (
+        line.includes(":")
+      ) {
 
-        machineCode.push(0x06);
-        machineCode.push(value);
+        const separatorIndex =
+          line.indexOf(":");
+
+        line =
+          line
+            .slice(separatorIndex + 1)
+            .trim();
       }
 
-      // =========================
-      // MVI C, DATA
-      // =========================
+      // ---------------------------------------------
+      // TOKENIZE
+      // ---------------------------------------------
 
-      else if (instruction === "MVI" && parts[1] === "C") {
-        const value = parseNumber(parts[2]);
+      const parts = line
+        .replace(",", " ")
+        .trim()
+        .split(/\s+/);
 
-        machineCode.push(0x0E);
-        machineCode.push(value);
+      const instruction =
+        parts[0];
+
+      const operand1 =
+        parts[1];
+
+      const operand2 =
+        parts[2];
+
+      // =================================================
+      // NOP
+      // =================================================
+
+      if (
+        instruction === "NOP"
+      ) {
+
+        machineCode.push(
+          0x00
+        );
       }
 
-      // =========================
-      // MVI D, DATA
-      // =========================
+      // =================================================
+      // MVI
+      // =================================================
 
-      else if (instruction === "MVI" && parts[1] === "D") {
-        const value = parseNumber(parts[2]);
+      else if (
+        instruction === "MVI"
+      ) {
 
-        machineCode.push(0x16);
-        machineCode.push(value);
+        const register =
+          operand1;
+
+        const value =
+          parseNumber(
+            operand2
+          );
+
+        const mviOpcodes = {
+
+          A: 0x3E,
+          B: 0x06,
+          C: 0x0E,
+          D: 0x16,
+          E: 0x1E,
+          H: 0x26,
+          L: 0x2E
+
+        };
+
+        if (
+          mviOpcodes[register]
+          === undefined
+        ) {
+
+          throw new Error(
+            `Invalid MVI register: ${register}`
+          );
+        }
+
+        if (
+          value > 0xFF
+        ) {
+
+          throw new Error(
+            `MVI value must be 8-bit: ${operand2}`
+          );
+        }
+
+        machineCode.push(
+
+          mviOpcodes[register],
+          value
+
+        );
       }
 
-      // =========================
-      // MVI E, DATA
-      // =========================
+      // =================================================
+      // MOV
+      // =================================================
 
-      else if (instruction === "MVI" && parts[1] === "E") {
-        const value = parseNumber(parts[2]);
+      else if (
+        instruction === "MOV"
+      ) {
 
-        machineCode.push(0x1E);
-        machineCode.push(value);
+        const destination =
+          operand1;
+
+        const source =
+          operand2;
+
+        if (
+
+          registerCodes[destination]
+          === undefined ||
+
+          registerCodes[source]
+          === undefined
+
+        ) {
+
+          throw new Error(
+            `Invalid MOV instruction: ${line}`
+          );
+        }
+
+        const opcode =
+
+          0x40 |
+
+          (
+            registerCodes[destination]
+            << 3
+          ) |
+
+          registerCodes[source];
+
+        // 0x76 is HLT
+        if (
+          opcode === 0x76
+        ) {
+
+          throw new Error(
+            "MOV M, M is not valid"
+          );
+        }
+
+        machineCode.push(
+          opcode
+        );
       }
 
-      // =========================
-      // MVI H, DATA
-      // =========================
+      // =================================================
+      // ADD
+      // =================================================
 
-      else if (instruction === "MVI" && parts[1] === "H") {
-        const value = parseNumber(parts[2]);
+      else if (
+        instruction === "ADD"
+      ) {
 
-        machineCode.push(0x26);
-        machineCode.push(value);
+        const addOpcodes = {
+
+          B: 0x80,
+          C: 0x81,
+          D: 0x82,
+          E: 0x83,
+          H: 0x84,
+          L: 0x85,
+          A: 0x87
+
+        };
+
+        if (
+          addOpcodes[operand1]
+          === undefined
+        ) {
+
+          throw new Error(
+            `Invalid ADD instruction: ${line}`
+          );
+        }
+
+        machineCode.push(
+          addOpcodes[operand1]
+        );
       }
 
-      // =========================
-      // MVI L, DATA
-      // =========================
+      // =================================================
+      // SUB
+      // =================================================
 
-      else if (instruction === "MVI" && parts[1] === "L") {
-        const value = parseNumber(parts[2]);
+      else if (
+        instruction === "SUB"
+      ) {
 
-        machineCode.push(0x2E);
-        machineCode.push(value);
+        const subOpcodes = {
+
+          B: 0x90,
+          C: 0x91,
+          D: 0x92,
+          E: 0x93,
+          H: 0x94,
+          L: 0x95,
+          A: 0x97
+
+        };
+
+        if (
+          subOpcodes[operand1]
+          === undefined
+        ) {
+
+          throw new Error(
+            `Invalid SUB instruction: ${line}`
+          );
+        }
+
+        machineCode.push(
+          subOpcodes[operand1]
+        );
       }
 
-      // =========================
-      // ADD B
-      // =========================
+      // =================================================
+      // INR
+      // =================================================
 
-      else if (instruction === "ADD" && parts[1] === "B") {
-        machineCode.push(0x80);
+      else if (
+        instruction === "INR"
+      ) {
+
+        const inrOpcodes = {
+
+          A: 0x3C,
+          B: 0x04,
+          C: 0x0C,
+          D: 0x14,
+          E: 0x1C,
+          H: 0x24,
+          L: 0x2C
+
+        };
+
+        if (
+          inrOpcodes[operand1]
+          === undefined
+        ) {
+
+          throw new Error(
+            `Invalid INR instruction: ${line}`
+          );
+        }
+
+        machineCode.push(
+          inrOpcodes[operand1]
+        );
       }
 
-      // =========================
-      // ADD C
-      // =========================
+      // =================================================
+      // DCR
+      // =================================================
 
-      else if (instruction === "ADD" && parts[1] === "C") {
-        machineCode.push(0x81);
+      else if (
+        instruction === "DCR"
+      ) {
+
+        const dcrOpcodes = {
+
+          A: 0x3D,
+          B: 0x05,
+          C: 0x0D,
+          D: 0x15,
+          E: 0x1D,
+          H: 0x25,
+          L: 0x2D
+
+        };
+
+        if (
+          dcrOpcodes[operand1]
+          === undefined
+        ) {
+
+          throw new Error(
+            `Invalid DCR instruction: ${line}`
+          );
+        }
+
+        machineCode.push(
+          dcrOpcodes[operand1]
+        );
       }
 
-      // =========================
+      // =================================================
+      // MUL B
+      // =================================================
+
+      else if (
+
+        instruction === "MUL" &&
+        operand1 === "B"
+
+      ) {
+
+        machineCode.push(
+          0xE8
+        );
+      }
+
+      // =================================================
+      // DIV B
+      // =================================================
+
+      else if (
+
+        instruction === "DIV" &&
+        operand1 === "B"
+
+      ) {
+
+        machineCode.push(
+          0xE9
+        );
+      }
+
+      // =================================================
+      // JMP
+      // =================================================
+
+      else if (
+        instruction === "JMP"
+      ) {
+
+        const target =
+          resolveAddress(
+            operand1,
+            labels
+          );
+
+        machineCode.push(
+
+          0xC3,
+
+          target & 0xFF,
+
+          (target >> 8) & 0xFF
+
+        );
+      }
+
+      // =================================================
+      // JNZ
+      // =================================================
+
+      else if (
+        instruction === "JNZ"
+      ) {
+
+        const target =
+          resolveAddress(
+            operand1,
+            labels
+          );
+
+        machineCode.push(
+
+          0xC2,
+
+          target & 0xFF,
+
+          (target >> 8) & 0xFF
+
+        );
+      }
+
+      // =================================================
+      // JC
+      // =================================================
+
+      else if (
+        instruction === "JC"
+      ) {
+
+        const target =
+          resolveAddress(
+            operand1,
+            labels
+          );
+
+        machineCode.push(
+
+          0xDA,
+
+          target & 0xFF,
+
+          (target >> 8) & 0xFF
+
+        );
+      }
+
+      // =================================================
+      // JNC
+      // =================================================
+
+      else if (
+        instruction === "JNC"
+      ) {
+
+        const target =
+          resolveAddress(
+            operand1,
+            labels
+          );
+
+        machineCode.push(
+
+          0xD2,
+
+          target & 0xFF,
+
+          (target >> 8) & 0xFF
+
+        );
+      }
+
+      // =================================================
       // HLT
-      // =========================
+      // =================================================
 
-      else if (instruction === "HLT") {
-        machineCode.push(0x76);
+      else if (
+        instruction === "HLT"
+      ) {
+
+        machineCode.push(
+          0x76
+        );
       }
 
-      // =========================
+      // =================================================
       // UNKNOWN INSTRUCTION
-      // =========================
+      // =================================================
 
       else {
-        throw new Error(`Unsupported instruction: ${line}`);
+
+        throw new Error(
+          `Unsupported instruction: ${line}`
+        );
       }
     }
 
@@ -147,59 +756,80 @@ HLT`
   };
 
   // =====================================================
-  // NUMBER PARSER
-  // =====================================================
-
-  const parseNumber = (value) => {
-    if (!value) {
-      throw new Error("Missing numeric value");
-    }
-
-    value = value.toUpperCase();
-
-    // Hexadecimal: 05H
-    if (value.endsWith("H")) {
-      return parseInt(value.slice(0, -1), 16);
-    }
-
-    // Binary: 00000101B
-    if (value.endsWith("B")) {
-      return parseInt(value.slice(0, -1), 2);
-    }
-
-    // Decimal: 5
-    return parseInt(value, 10);
-  };
-
-  // =====================================================
   // LOAD PROGRAM
   // =====================================================
 
   const loadProgram = async () => {
+
     try {
-      const machineCode = assembleProgram(assemblyCode);
 
-      console.log("Generated Machine Code:", machineCode);
+      const machineCode =
+        assembleProgram(
+          assemblyCode
+        );
 
-      const response = await axios.post(`${API_URL}/load`, {
-        program: machineCode,
-      });
-
-      setState(response.data.state);
-      setHistory([]);
-
-      setMessage(
-        `Program loaded successfully | ${machineCode
-          .map((byte) => byte.toString(16).toUpperCase().padStart(2, "0"))
-          .join(" ")}`
+      console.log(
+        "Generated Machine Code:",
+        machineCode
       );
-    } catch (error) {
-      console.error(error);
+
+      const response =
+        await axios.post(
+
+          `${API_URL}/load`,
+
+          {
+            program: machineCode
+          }
+
+        );
+
+      setState(
+        response.data.state
+      );
+
+      setHistory(
+        []
+      );
 
       setMessage(
+
+        `Program loaded successfully | ` +
+
+        machineCode
+
+          .map((byte) =>
+
+            byte
+
+              .toString(16)
+
+              .toUpperCase()
+
+              .padStart(2, "0")
+
+          )
+
+          .join(" ")
+
+      );
+
+    }
+
+    catch (error) {
+
+      console.error(
+        error
+      );
+
+      setMessage(
+
         error.response?.data?.detail ||
+
         error.message ||
+
         "Error loading program"
+
       );
     }
   };
@@ -209,25 +839,56 @@ HLT`
   // =====================================================
 
   const stepProgram = async () => {
+
     try {
-      const response = await axios.post(`${API_URL}/step`);
 
-      setState(response.data.state);
+      const response =
+        await axios.post(
 
-      if (response.data.result) {
-        setHistory((previous) => [
-          ...previous,
-          response.data.result,
-        ]);
+          `${API_URL}/step`
+
+        );
+
+      setState(
+        response.data.state
+      );
+
+      if (
+        response.data.result
+      ) {
+
+        setHistory(
+
+          (previous) => [
+
+            ...previous,
+
+            response.data.result
+
+          ]
+
+        );
       }
 
-      setMessage("One instruction executed");
-    } catch (error) {
-      console.error(error);
+      setMessage(
+        "One instruction executed"
+      );
+    }
+
+    catch (error) {
+
+      console.error(
+        error
+      );
 
       setMessage(
+
         error.response?.data?.detail ||
+
+        error.message ||
+
         "Error executing instruction"
+
       );
     }
   };
@@ -237,21 +898,47 @@ HLT`
   // =====================================================
 
   const runProgram = async () => {
+
     try {
-      const response = await axios.post(`${API_URL}/run`, {
-        max_steps: 100,
-      });
 
-      setState(response.data.state);
-      setHistory(response.data.history || []);
+      const response =
+        await axios.post(
 
-      setMessage("Program execution completed");
-    } catch (error) {
-      console.error(error);
+          `${API_URL}/run`,
+
+          {
+            max_steps: 1000
+          }
+
+        );
+
+      setState(
+        response.data.state
+      );
+
+      setHistory(
+        response.data.history || []
+      );
 
       setMessage(
+        "Program execution completed"
+      );
+    }
+
+    catch (error) {
+
+      console.error(
+        error
+      );
+
+      setMessage(
+
         error.response?.data?.detail ||
+
+        error.message ||
+
         "Error running program"
+
       );
     }
   };
@@ -261,35 +948,96 @@ HLT`
   // =====================================================
 
   const resetProgram = async () => {
+
     try {
-      const response = await axios.post(`${API_URL}/reset`);
 
-      setState(response.data.state);
-      setHistory([]);
+      const response =
+        await axios.post(
 
-      setMessage("CPU reset successfully");
-    } catch (error) {
-      console.error(error);
+          `${API_URL}/reset`
 
-      setMessage("Error resetting CPU");
+        );
+
+      setState(
+        response.data.state
+      );
+
+      setHistory(
+        []
+      );
+
+      setMessage(
+        "CPU reset successfully"
+      );
+    }
+
+    catch (error) {
+
+      console.error(
+        error
+      );
+
+      setMessage(
+        "Error resetting CPU"
+      );
     }
   };
 
+  // =====================================================
+  // FORMAT REGISTER VALUE
+  // =====================================================
+
+  const getRegisterValue = (register) => {
+
+    return (
+
+      state?.registers?.[register] ??
+      "00"
+
+    );
+  };
+
+  // =====================================================
+  // FORMAT SPECIAL REGISTER
+  // =====================================================
+
+  const getSpecialRegisterValue = (
+    register,
+    defaultValue
+  ) => {
+
+    return (
+
+      state?.registers?.[register] ??
+      defaultValue
+
+    );
+  };
+
+  // =====================================================
+  // UI
+  // =====================================================
+
   return (
+
     <div className="app">
 
-      {/* =====================================================
+      {/* =================================================
           HEADER
-      ===================================================== */}
+      ================================================= */}
 
       <header className="header">
 
         <div>
-          <h1>8085 Microprocessor Simulator</h1>
+
+          <h1>
+            8085 Microprocessor Simulator
+          </h1>
 
           <p>
             Assembly Language Debugger & Visual Simulator
           </p>
+
         </div>
 
         <div className="status">
@@ -302,76 +1050,136 @@ HLT`
 
       </header>
 
-      {/* =====================================================
-          MAIN DASHBOARD
-      ===================================================== */}
+      {/* =================================================
+          DASHBOARD
+      ================================================= */}
 
       <main className="dashboard">
 
-        {/* =====================================================
+        {/* =================================================
             ASSEMBLY EDITOR
-        ===================================================== */}
+        ================================================= */}
 
         <section className="editor-panel card">
 
-          <h2>Assembly Editor</h2>
+          <h2>
+            Assembly Editor
+          </h2>
 
           <textarea
-            value={assemblyCode}
-            onChange={(event) =>
-              setAssemblyCode(event.target.value)
+
+            value={
+              assemblyCode
             }
-            placeholder="Write 8085 assembly code here..."
+
+            onChange={
+
+              (event) =>
+
+                setAssemblyCode(
+                  event.target.value
+                )
+
+            }
+
+            placeholder=
+            "Write 8085 assembly code here..."
+
           />
 
           {/* MACHINE CODE PREVIEW */}
 
           <div className="machine-code-preview">
 
-            <strong>Generated Machine Code:</strong>
+            <strong>
+              Generated Machine Code:
+            </strong>
 
             <code>
+
               {(() => {
+
                 try {
-                  return assembleProgram(assemblyCode)
+
+                  return assembleProgram(
+                    assemblyCode
+                  )
+
                     .map((byte) =>
+
                       byte
+
                         .toString(16)
+
                         .toUpperCase()
+
                         .padStart(2, "0")
+
                     )
+
                     .join(" ");
-                } catch {
-                  return "Invalid instruction";
+
                 }
+
+                catch (error) {
+
+                  return "Invalid instruction";
+
+                }
+
               })()}
+
             </code>
 
           </div>
 
-          {/* BUTTONS */}
+          {/* CONTROLS */}
 
           <div className="controls">
 
-            <button onClick={loadProgram}>
+            <button
+              onClick={
+                loadProgram
+              }
+            >
               LOAD
             </button>
 
             <button
-              onClick={stepProgram}
-              disabled={!state || state.halted}
+
+              onClick={
+                stepProgram
+              }
+
+              disabled={
+                !state ||
+                state.halted
+              }
+
             >
               STEP
             </button>
 
             <button
-              onClick={runProgram}
-              disabled={!state || state.halted}
+
+              onClick={
+                runProgram
+              }
+
+              disabled={
+                !state ||
+                state.halted
+              }
+
             >
               RUN
             </button>
 
-            <button onClick={resetProgram}>
+            <button
+              onClick={
+                resetProgram
+              }
+            >
               RESET
             </button>
 
@@ -385,13 +1193,15 @@ HLT`
 
         </section>
 
-        {/* =====================================================
+        {/* =================================================
             CPU REGISTERS
-        ===================================================== */}
+        ================================================= */}
 
         <section className="card">
 
-          <h2>CPU Registers</h2>
+          <h2>
+            CPU Registers
+          </h2>
 
           <div className="register-grid">
 
@@ -402,23 +1212,41 @@ HLT`
               "D",
               "E",
               "H",
-              "L",
-            ].map((register) => (
+              "L"
 
-              <div
-                className="register"
-                key={register}
-              >
+            ].map(
 
-                <span>{register}</span>
+              (register) => (
 
-                <strong>
-                  {state?.registers?.[register] || "00"}
-                </strong>
+                <div
 
-              </div>
+                  className="register"
 
-            ))}
+                  key={
+                    register
+                  }
+
+                >
+
+                  <span>
+                    {register}
+                  </span>
+
+                  <strong>
+
+                    {
+                      getRegisterValue(
+                        register
+                      )
+                    }
+
+                  </strong>
+
+                </div>
+
+              )
+
+            )}
 
           </div>
 
@@ -426,30 +1254,57 @@ HLT`
 
             <div>
 
-              <span>PC</span>
+              <span>
+                PC
+              </span>
 
               <strong>
-                {state?.registers?.PC || "0000"}
+
+                {
+                  getSpecialRegisterValue(
+                    "PC",
+                    "0000"
+                  )
+                }
+
               </strong>
 
             </div>
 
             <div>
 
-              <span>SP</span>
+              <span>
+                SP
+              </span>
 
               <strong>
-                {state?.registers?.SP || "FFFF"}
+
+                {
+                  getSpecialRegisterValue(
+                    "SP",
+                    "FFFF"
+                  )
+                }
+
               </strong>
 
             </div>
 
             <div>
 
-              <span>IR</span>
+              <span>
+                IR
+              </span>
 
               <strong>
-                {state?.registers?.IR || "00"}
+
+                {
+                  getSpecialRegisterValue(
+                    "IR",
+                    "00"
+                  )
+                }
+
               </strong>
 
             </div>
@@ -458,13 +1313,15 @@ HLT`
 
         </section>
 
-        {/* =====================================================
+        {/* =================================================
             FLAGS
-        ===================================================== */}
+        ================================================= */}
 
         <section className="card">
 
-          <h2>Flags</h2>
+          <h2>
+            Flags
+          </h2>
 
           <div className="flags-grid">
 
@@ -473,71 +1330,45 @@ HLT`
               "Z",
               "AC",
               "P",
-              "CY",
-            ].map((flag) => (
+              "CY"
 
-              <div
-                className={`flag ${state?.flags?.[flag] === 1
-                  ? "active"
-                  : ""
-                  }`}
-                key={flag}
-              >
+            ].map(
 
-                <span>{flag}</span>
-
-                <strong>
-                  {state?.flags?.[flag] ?? 0}
-                </strong>
-
-              </div>
-
-            ))}
-
-          </div>
-
-        </section>
-
-        {/* =====================================================
-            EXECUTION TRACE
-        ===================================================== */}
-
-        <section className="card">
-
-          <h2>Execution Trace</h2>
-
-          <div className="trace">
-
-            {history.length === 0 ? (
-
-              <p className="empty">
-                No instructions executed yet
-              </p>
-
-            ) : (
-
-              history.map((item, index) => (
+              (flag) => (
 
                 <div
-                  className="trace-row"
-                  key={index}
+
+                  className={
+
+                    `flag ${state?.flags?.[flag] === 1
+                      ? "active"
+                      : ""
+                    }`
+
+                  }
+
+                  key={
+                    flag
+                  }
+
                 >
 
                   <span>
-                    Step {index + 1}
+                    {flag}
                   </span>
 
                   <strong>
-                    {item.opcode}
-                  </strong>
 
-                  <span>
-                    {item.instruction}
-                  </span>
+                    {
+                      state?.flags?.[flag] ??
+                      0
+                    }
+
+                  </strong>
 
                 </div>
 
-              ))
+              )
 
             )}
 
@@ -545,41 +1376,142 @@ HLT`
 
         </section>
 
-        {/* =====================================================
+        {/* =================================================
+            EXECUTION TRACE
+        ================================================= */}
+
+        <section className="card">
+
+          <h2>
+            Execution Trace
+          </h2>
+
+          <div className="trace">
+
+            {
+
+              history.length === 0
+
+                ? (
+
+                  <p className="empty">
+
+                    No instructions executed yet
+
+                  </p>
+
+                )
+
+                : (
+
+                  history.map(
+
+                    (item, index) => (
+
+                      <div
+
+                        className="trace-row"
+
+                        key={
+                          index
+                        }
+
+                      >
+
+                        <span>
+
+                          Step {
+                            index + 1
+                          }
+
+                        </span>
+
+                        <strong>
+
+                          {
+                            item.opcode
+                          }
+
+                        </strong>
+
+                        <span>
+
+                          {
+                            item.instruction
+                          }
+
+                        </span>
+
+                      </div>
+
+                    )
+
+                  )
+
+                )
+
+            }
+
+          </div>
+
+        </section>
+
+        {/* =================================================
             SYSTEM INFORMATION
-        ===================================================== */}
+        ================================================= */}
 
         <section className="card system-info">
 
-          <h2>System Information</h2>
+          <h2>
+            System Information
+          </h2>
 
           <div className="info-grid">
 
             <div>
 
-              <span>Cycles</span>
+              <span>
+                Cycles
+              </span>
 
               <strong>
-                {state?.cycles ?? 0}
+
+                {
+                  state?.cycles ??
+                  0
+                }
+
               </strong>
 
             </div>
 
             <div>
 
-              <span>CPU Status</span>
+              <span>
+                CPU Status
+              </span>
 
               <strong>
-                {state?.halted
-                  ? "HALTED"
-                  : "READY"}
+
+                {
+
+                  state?.halted
+
+                    ? "HALTED"
+
+                    : "READY"
+
+                }
+
               </strong>
 
             </div>
 
             <div>
 
-              <span>Architecture</span>
+              <span>
+                Architecture
+              </span>
 
               <strong>
                 8085
@@ -589,7 +1521,9 @@ HLT`
 
             <div>
 
-              <span>Data Width</span>
+              <span>
+                Data Width
+              </span>
 
               <strong>
                 8-bit
@@ -604,6 +1538,7 @@ HLT`
       </main>
 
     </div>
+
   );
 }
 
