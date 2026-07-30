@@ -2,7 +2,7 @@ import { useState } from "react";
 import axios from "axios";
 import "./App.css";
 
-const API_URL = "https://eight085-simulator.onrender.com";
+const API_URL = "https://eight085-simulator.onrender.com/api/simulator";
 
 function App() {
 
@@ -21,7 +21,7 @@ HLT`
 
   const [state, setState] = useState(null);
   const [history, setHistory] = useState([]);
-  const [message, setMessage] = useState("Ready");
+  const [message, setMessage] = useState("Ready6");
 
   // =====================================================
   // NUMBER PARSER
