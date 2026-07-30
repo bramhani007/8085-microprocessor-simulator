@@ -10,9 +10,9 @@
 
 ## Overview
 
-The **8085 Microprocessor Simulator** is a software-based application that simulates the architecture and instruction execution of the Intel 8085 microprocessor. It enables users to write, execute, and debug 8085 assembly language programs while visualizing the internal CPU operations in real time.
+The **8085 Microprocessor Simulator** is a software-based application that simulates architecture and instruction execution of Intel 8085 microprocessor. It enables users to write, execute, and debug 8085 assembly language programs while visualizing internal CPU operations in real time.
 
-The simulator provides an interactive environment for understanding how 8085 microprocessor executes instructions through **Fetch–Decode–Execute** cycle. During execution, users can observe updates to registers, flags, memory, the Program Counter (PC), Stack Pointer (SP), Instruction Register (IR), and CPU status.
+The simulator provides an interactive environment for understanding how 8085 microprocessor executes instructions through **Fetch–Decode–Execute** cycle. During execution, users can observe updates to registers, flags, memory, Program Counter (PC), Stack Pointer (SP), Instruction Register (IR), and CPU status.
 
 ---
 
@@ -82,14 +82,21 @@ The simulator provides an interactive environment for understanding how 8085 mic
 ├── README.md
 └── run_tests.bat
 ```
+## 🌐 Deployment
+
+| Service | URL |
+|---------|-----|
+| Frontend (Vercel) | https://8085-microprocessor-simulator.vercel.app/ |
+| Backend (Render) | https://eight085-simulator.onrender.com |
+| API Documentation | https://eight085-simulator.onrender.com/docs |
 
 ---
 
-# How to Run the Project (Windows)
+# How to Run Project (Windows)
 
 ## Prerequisites
 
-Install the following software before running the project.
+Install following software before running project.
 
 - Python 3.12 or later
 - Node.js (LTS Version)
@@ -97,7 +104,7 @@ Install the following software before running the project.
 
 ---
 
-## Step 1: Clone the Repository
+## Step 1: Clone Repository
 
 ```bash
 git clone https://github.com/bramhani007/8085-microprocessor-simulator.git
@@ -105,7 +112,7 @@ git clone https://github.com/bramhani007/8085-microprocessor-simulator.git
 cd 8085-microprocessor-simulator-main
 ```
 
-Or download the ZIP file from GitHub and extract it.
+Or download ZIP file from GitHub and extract it.
 
 ---
 
