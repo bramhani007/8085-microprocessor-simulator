@@ -8,7 +8,7 @@ function App() {
 
   const [assemblyCode, setAssemblyCode] = useState(
     `MVI A, 00H
-MVI B, 05H
+MVI B, 02H
 MVI C, 03H
 
 LOOP:
@@ -21,7 +21,7 @@ HLT`
 
   const [state, setState] = useState(null);
   const [history, setHistory] = useState([]);
-  const [message, setMessage] = useState("Ready6");
+  const [message, setMessage] = useState("Ready");
 
   // =====================================================
   // NUMBER PARSER
