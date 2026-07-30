@@ -102,7 +102,7 @@ Install the following software before running the project.
 ```bash
 git clone https://github.com/bramhani007/8085-microprocessor-simulator.git
 
-cd 8085-microprocessor-simulator
+cd 8085-microprocessor-simulator-main
 ```
 
 Or download the ZIP file from GitHub and extract it.
