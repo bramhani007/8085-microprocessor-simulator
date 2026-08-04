@@ -11,8 +11,7 @@ function App() {
 MVI B, 02H
 MVI C, 03H
 
-LOOP:
-ADD B
+LOOP: ADD B
 DCR C
 JNZ LOOP
 
