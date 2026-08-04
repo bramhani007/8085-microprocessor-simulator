@@ -6,7 +6,7 @@
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6-F7DF1E?logo=javascript&logoColor=black)
 ![SQLite](https://img.shields.io/badge/SQLite-Database-003B57?logo=sqlite)
 ![Git](https://img.shields.io/badge/Git-Version%20Control-F05032?logo=git)
-![GitHub](https://img.shields.io/badge/GitHub-Repository-181717?logo=github)
+
 
 ## Overview
 
